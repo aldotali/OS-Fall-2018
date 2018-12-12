@@ -29,7 +29,8 @@
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Aldo Tali");
 
-// a tas refers to a processor or a thread running in the system
+// a task refers to a processor or a thread running in the system
+// this is a linux source code macro that we used. 
 #define next_task(p) \
 	list_entry_rcu((p)->tasks.next, struct task_struct, tasks)
 
@@ -60,7 +61,7 @@ static void printVMInfoForProcess(struct task_struct *process){
 
     int safetycounter = 0;
 
-    //NOTE: this is being printed just for testing purposes. Recheck it before submission
+    //NOTE: this is being printed just for testing purposes. Recheck it before subitshiftMaskerission
 	printk(KERN_NOTICE "The proccess id: , PID: %d\n", process->pid);
 	printk(KERN_NOTICE "The start of PID: %ld and the end of PID: %ld", listOfVMAreas->vm_start,listOfVMAreas->vm_end);
 	
@@ -77,7 +78,7 @@ static void printVMInfoForProcess(struct task_struct *process){
 		safetycounter = safetycounter +1;
 	}
 
-    //NOTE: this is being printed just for testing purposes. Recheck it before submission
+    //NOTE: this is being printed just for testing purposes. Recheck it before subitshiftMaskerission
 	printk(KERN_NOTICE "Areas Counter: %d\n", safetycounter);
 	printk(KERN_INFO "The required structures are given below: \n");
 
@@ -125,7 +126,7 @@ static void findPid(int pidInput){
 		}
     }
 
-    //NOTE: this is being printed just for testing purposes. Recheck it before submission
+    //NOTE: this is being printed just for testing purposes. Recheck it before subitshiftMaskerission
 	printk(KERN_NOTICE "There are : %d processes", process_counter);
 	traversePointer = NULL;
 	
@@ -133,6 +134,7 @@ static void findPid(int pidInput){
 
 }
 
+//linux source code definitions
 #define PAGE_SHIFT  12
 #define PAGE_SIZE   (_AC(1,UL) << PAGE_SHIFT)
 #define PAGE_MASK   (~(PAGE_SIZE-1))
@@ -141,7 +143,7 @@ static void findPid(int pidInput){
 static void printMultiplePageContents(int a){
     
 
-	//int PAGE_SIZE = 512
+	int PAGE_SIZE = 512
 
     struct task_struct *myProccess = current;
 
@@ -157,45 +159,43 @@ static void printMultiplePageContents(int a){
 	pmdval_t pmdValue;
 	pte_t *fourthLevel;
 	pteval_t pteValue;
+	u64 bitshiftMasker = ((1LL<<(40))-1) << 12;
 
+	void *virtualAdressTemp; //virtual addr of page table entry
+	phys_addr_t virtualAdressTemp; //physical addr of page table entry
 
-	void *vaddr; //virtual addr of page table entry
-	phys_addr_t paddr; //physical addr of page table entry
+	int maskLastBit =   0b0000000000000001;
+	int extract;
 
-	for (i = 0; i < 512; i++) {
+	for (i = 0; i < PAGE_SIZE; i++) {
 		pgdValue = pgd_val(topLevel[i]);
-		
+		int mask =   0b0000111000000000;
 		if (pgdValue != 0){
-			printk(KERN_INFO "The memory table info for firstLevel %ld,%ld\n",pgdValue,topLevel[i] );
+			printk(KERN_INFO "The memory table info for firstLevel: \n\n");
 			
-			/*pagetble_entry bits 51:12 contains the physical address of the next page table level*/
-			//NOTE:I Got these two lines from linux documentation change modify whaterdver.
-			u64 bm = ((1LL<<(51 - 12 + 1))-1) << 12;
-			paddr = pgdValue & bm;
+			virtualAdressTemp = pgdValue & bitshiftMasker;
+			secondLevel = phys_to_virt(virtualAdressTemp);
 
-
-			secondLevel = phys_to_virt(paddr);
-
-			for (j = 0; j < 512; j++){
+			for (j = 0; j < PAGE_SIZE; j++){
 				pudValue = pud_val(secondLevel[j]);
 				if (pudValue != 0){
-					printk(KERN_INFO "The memory table info for second %ld,%ld\n",pudValue,topLevel[i] );
+					printk(KERN_INFO "The memory table info for second: \n\n" );
 					
-					paddr = pudValue & bm;
-					thirdLevel = phys_to_virt(paddr);
+					virtualAdressTemp = pudValue & bitshiftMasker;
+					thirdLevel = phys_to_virt(virtualAdressTemp);
 
-					for(k=0; k<512; k++){
+					for(k=0; k<PAGE_SIZE; k++){
 						pmdValue = pmd_val(thirdLevel[k]);
 						if(pmdValue != 0){
-							printk(KERN_INFO "The memory table info for third %ld,%ld,%ld\n",pmdValue,secondLevel[j],topLevel[i] );
+							printk(KERN_INFO "The memory table info for third: \n\n" );
 							
-							paddr = pudValue & bm;
-							fourthLevel = phys_to_virt(paddr);
+							virtualAdressTemp = pudValue & bitshiftMasker;
+							fourthLevel = phys_to_virt(virtualAdressTemp);
 
-							for(p=0; p < 512; p++){
+							for(p=0; p < PAGE_SIZE; p++){
 								pteValue = pte_val(fourthLevel[p]);
 								if (pteValue != 0){
-									printk(KERN_INFO "The memory table info for fourth %ld,%ld,%ld,%ld\n",pteValue,thirdLevel[k],secondLevel[j],topLevel[i] );
+									printk(KERN_INFO "The memory table info for fourth \n\n" );
 
 								}
 							}
@@ -204,12 +204,51 @@ static void printMultiplePageContents(int a){
 					
 				}
 			}
+		}
 	}
 	
     
     
 
 }
+
+
+static void executePart3(int pid){
+	int process_counter = 0;
+
+    //use this pointer to traverse all the processes in the system
+    struct task_struct *traversePointer;
+
+    //makes use of the next_task macro to traverse the prooccesses
+    //rather than using the "current" struct makes use of the "init_task" struct
+    //either wa the end result shoudl be the same since the pricesses are linked by a doubly linked list
+	for (traversePointer = &init_task ; (traversePointer = next_task(traversePointer)) != &init_task ; ) {
+        ++process_counter;
+
+        //we are looking way too much, possibility that we are running on infinite loop and the system will block
+		if (process_counter > MAXIMUM_LOGGING){
+			printk(KERN_NOTICE "The system return from the findPID module since it was taking too long to find the result \n");
+			traversePointer = NULL;
+			return;
+		}
+
+        //if we find the proccess then print its information
+		if ( traversePointer->pid == pid){
+			printk(KERN_NOTICE "The proccess id %d was found ",traversePointer->pid);
+			;
+			printk(KERN_NOTICE "The total heap is: %ld\n", traversePointer->mm->brk - traversePointer->mm->start_brk );
+			return;
+		}
+    }
+
+    //NOTE: this is being printed just for testing purposes. Recheck it before subitshiftMaskerission
+	printk(KERN_NOTICE "There are : %d processes", process_counter);
+	traversePointer = NULL;
+	
+    printk(KERN_NOTICE "We were not able to find the process of given id. Aborting");
+
+}
+
 
 //the initializer of the module that is inserted
 static int __init part3B_init(void)
@@ -227,6 +266,7 @@ static int __init part3B_init(void)
     printk("The current process id is %d\n", (int) task_pid_nr(current));
 	//findPid(inputProcessID);
     printMultiplePageContents(1);
+	//executePart3(inputProcessID);
 	return 0;
 }
 
